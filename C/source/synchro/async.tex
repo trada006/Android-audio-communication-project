@@ -1,0 +1,852 @@
+\RequirePackage[l2tabu, orthodox]{nag}
+
+%\documentclass[a4paper,10pt]{article}
+%\documentclass[draftcls, onecolumn, 11pt]{IEEEtran}
+%\documentclass[journal]{IEEEtran}
+\documentclass[journal]{IEEEtranTCOM}
+%\documentclass[journal,draftcls,onecolumn,12pt,twoside]{IEEEtranTCOM}
+ 
+\usepackage{mathbf-abbrevs}
+\input{defs}
+
+\pdfminorversion=4
+
+%\usepackage{xr}
+%\externaldocument{paper2}
+
+\usepackage{amsmath,amsfonts,amssymb, amsthm, bm}
+
+\usepackage[square,comma,numbers,sort&compress]{natbib}
+
+\newcommand{\sgn}{\operatorname{sgn}}
+\newcommand{\sinc}{\operatorname{sinc}}
+\newcommand{\rect}[1]{\operatorname{rect}\left(#1\right)}
+
+%opening
+\title{Simultaneous symbol timing and frame synchronization for phase shift keying}
+\author{Robby McKilliam, Andr\'{e} Pollok and William Cowley  
+\thanks{
+Supported under the Australian Government's Australian Space Research Program.
+Robby McKilliam, Andr\'{e} Pollok and Bill Cowley are with the Institute for Telecommunications Research, The University of South Australia, SA, 5095.}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We develop an estimator of time offset (or time-of-arrival) of a transmitted communications signal that contains both pilot symbols, known to the receiver, and data symbols, unknown to the receiver.  We focus on signalling constellations that have symbols lying on the complex unit circle, such as $M$-ary phase shift keying ($M$-PSK).  We describe an algorithm for computing the estimator that requires $O(L\log L)$ operations in the worst case, where $L$ is the number of transmitted symbols.  Our estimator integrates information from the pilot symbols more effectively than popular estimators from the literature that usually split estimation into two subproblems called \emph{symbol timing} and \emph{frame synchronisation}. Our estimator combines these subproblems into a single operation, that of estimating time offset.  %Our estimator benefits from this combination of `data-aided' and `non-data-aided' estimation techniques.  
+We hypothesise that our estimator will be statistically more accurate. Monte-Carlo simulations support this hypothesis.
+\end{abstract}
+\begin{IEEEkeywords}
+Synchronisation, phase shift keying
+\end{IEEEkeywords}
+
+
+\section{Introduction}
+
+In passband communication systems the transmitted signal typically undergoes time offset (delay), phase shift, and attenuation (amplitude change)~\cite{Mengali_andre_synchro_book,Meyr_synchro_book_1998}.  These effects must be compensated for at the receiver. In this paper, we focus on estimating the time offset and treat the phase shift and attenuation as nuisance parameters.  We consider signalling constellations that have symbols on the complex unit circle such as binary phase shift keying (BPSK), quaternary phase shift keying (QPSK) and $M$-ary phase shift keying ($M$-PSK).  In this setting, the transmitted signal takes the (complex baseband) form
+\[
+x(t) = \sum_{i \in \ints} s_i g(t - iT),
+\]
+where $g(t)$ is the transmit pulse, $T$ is the symbol period, $s_i \in C$ is the $i$th symbol, and $C$ is the complex unit circle. %($C$ is the subset of the complex numbers $\complex$ that have magnitude one).  
+We assume that some of the transmitted symbols are \emph{pilot symbols} known to the receiver and the remainder are information carrying \emph{data symbols}, with phase that is unknown to the receiver.  So,
+\[
+s_i = \begin{cases}
+p_i & i \in P, \\
+d_i & i \in D, \\
+0 & \text{otherwise},
+\end{cases}
+\]
+where $P$ is the set of indices describing the position of the pilot symbols $p_i$ and $D$ is a set of indices describing the position of the data symbols $d_i$.  The sets $P$ and $D$ are disjoint, that is, $P \cap D = \emptyset$ where $\emptyset$ is the empty set.  The union $P \cup D$ contains all those indices where the transmitter is active.  %Outside $P \cup D$ the transmitter is silent (not active).  
+The total number of symbols transmitted is denoted by $L = \abs{P} + \abs{D}$.  The transmitted signal can be written as
+\[
+x(t) = x_p(t) + x_d(t),
+\]
+where
+\[
+x_p(t) = \sum_{i \in P} p_i g(t - iT) \;\;\; \text{and} \;\;\; x_d(t) = \sum_{i \in D} d_i g(t - iT)
+\]
+are the pilot and data portions of the transmitted signal.
+
+We assume that the received signal undergoes time and phase offset, is attenuated by some amount, and is also subject to additive noise.  The model for the analogue received signal is
+\begin{equation}
+\begin{split}\label{eq:sigmodnoise}
+r(t) &= \alpha_0 x(t - \tau_0) + w(t) \\
+&= \alpha_0 x_p(t - \tau_0) + \alpha_0 x_d(t - \tau_0) + w(t),
+\end{split}
+\end{equation}
+where $\alpha_0$ is a complex number representing both attenuation and phase offset, $\tau_0 \in \reals$ is the time offset, and $w(t)$ is a continuous noise process.  We would like to estimate $\tau_0$.  Complicating this is that the receiver does not know the complex amplitude $\alpha_0$ nor the data symbols.  It is known that the magnitude $\abs{d_i} = 1$, but the complex argument $\angle d_i$ is not known.
+
+% The setting we have described involves a finite number of transmitted symbols represented by the indices in $P \cup D$.  This has been called \emph{packet data transmission} or \emph{burst-mode transmission}~\cite{Robertson_frame_sync_phd_1995}.  An alternative setting, \emph{continuous data transmission}, typically assumes $P \cup D = \ints$ and that the receiver only wishes to process the received signal $r(t)$ inside some finite window of time.  The estimator we describe here can be used in either of these settings, but to keep our ideas and notation focused we only consider packet data transmission here.  %The applications that motivated this reasearch (narrowband multiuser satellite communications) is best modelled by the packet data transmission setting.
+
+The problem of estimating time offset has undergone considerable prior research.  Typically the problem is broken into two subproblems called \emph{symbol synchronisation} and \emph{frame synchronisation}.  Symbol synchronisation focuses on estimating $\tau_0$ modulo the symbol period $T$, that is, if $\tau_0 = \gamma_0 + i_0T$ where $i_0 \in \ints$ and $\gamma_0 \in [-T/2, T/2)$, then an estimate of $\gamma_0$ is given.  This estimate may be used to drive a sampling device applied to the received signal (usually after matched filtering).  A~\emph{frame synchroniser} is then used to estimate $i_0$.  Traditional approaches to symbol synchronisation involve analogue phase-lock-loops~\cite{WilliamPLL1998,Meyr_synchro_book_1998,Tavares_PLL_symb_timer_2000} and popular modern digital approaches involve applying a filter to the output of a nonlinear function~\cite{Oerder_synch_square_circstat_1988,Morelli_symbtime_feedforward_1997,Panayirci_eval_per_symbtim_1996,YikChung_universal_anal_feedforward_2006,Wang_alt_lee_sybtiming_2003,Lee_more_feedforward_two_symbol_2002,Grimm_real_time_imp_timing_1998} (also known as \emph{spectral line generating clock synchronisers}~\cite[Sec.~2.4]{Meyr_synchro_book_1998}).  A popular approach to frame synchronisation that makes use of both pilot and data symbols was developed by Massey~\cite{Massey1972optimumframe,Nielsen_onmassey_1973,Robertson_frame_sync_phd_1995}.  Observe that symbol synchronisation estimators typically cannot make use of the pilot symbols since $i_0$ is not known (or estimated) when symbol synchronisation is performed.  The estimator we develop here combines frame synchronisation and symbol synchronisation into a single operation, that of estimating the time offset $\tau_0$.  A key feature of our estimator is that the pilots symbols are now used for both symbol and frame synchronisation simultaneously.  This gives our estimator a statistical advantage.
+
+Recently, iterative methods attempting to exploit the error correcting code used by the transmitter have appeared~\cite{Herzet_turbo_synch_proc_IEEE_2007,Herzet_timingturbosynch_2007,Herzet_framework_turbo_sync_2007}.  %These methods go by the name of~\emph{turbo sychronisation}~\cite{Herzet_turbo_synch_proc_IEEE_2007}.  
+These estimators typically apply the expectation maximisation (EM) algorithm under a Gaussian assumption regarding the noise $w(t)$.  A key problem is that the EM algorithm converges correctly only if initialised at some $\tau$ sufficiently close to $\tau_0$.  Methods for efficiently obtaining a $\tau$ close to $\tau_0$ are still required.  Our new estimator is a good candidate for this purpose.  %However, in some cases, it may be that our estimator is accurate enough, and that the gain obtained by applying the EM algorithm will not justify the extra computational cost.
+
+The design of our estimator was motivated by a project at the University of South Australia's Institute for Telecommunications Research to develop a narrowband multiuser communication system to collect sensor network data using a satellite in orbit.  This estimator has been implemented on a prototype that was successfully trialled from April to July of 2013 with signals from multiple low power ground-based transmitters being successfully received and decoded by both aircraft and satellites in orbit~\cite{ASRPpromovideo}.
+
+This paper is organised in the following way.  In Section~\ref{sec:cont-asynchr-case} we derive an estimator of time offset leaving the received signal in continuous time.  This is largely for the purpose of instruction as the derivation is cleaner in the continuous time setting.  In Section~\ref{sec:discr-asynchr-case} we convert the estimator to the more practical setting where the received signal is sampled. Sections~\ref{sec:computing-estimator} describes an algorithm for computing the estimator that requires $O(L\log L)$ operations in the worst case.  Section~\ref{sec:simulations} presents the results of Monte-Carlo simulations with our estimator 
+%The simulations indicate that, when the signal to noise ratio is sufficiently large, our estimator performs similarly to the estimator that results when all the symbols are known a priori at the receiver, that is, when all the symbols are pilots and no information is transmitted.  
+and with popular estimators from the literature that combine `nonlinearity and filter' symbol synchronisers~\cite{Oerder_synch_square_circstat_1988,Panayirci_eval_per_symbtim_1996} with the `high SNR' frame synchronisation algorithm of Massey~\cite{Massey1972optimumframe}\cite[Equation 3.29]{Robertson_frame_sync_phd_1995}.  While these symbol synchronisation algorithms require only $O(L)$ operations, Massey's frame synchroniser requires $O(L\log L)$ operations in the worst case setting that we consider here.  Thus, from an order of computational complexity standpoint, our estimator is comparable with existing computationally efficient estimation algorithms from the literature.  From a statistical standpoint, our new estimator performs favourably when compared with these popular estimators, particularly when the transmit pulse $g(t)$ is bandwidth efficient or when the signal to noise ratio is small.
+
+\section{The estimator in continuous-time}\label{sec:cont-asynchr-case}
+
+In this section, we derive an estimator of $\tau_0$ leaving the received signal in continuous time.    We proceed by treating the complex amplitude $\alpha_0 \in \complex$ and the data symbols $\{d_i \in C, i \in D\}$ as nuisance parameters to be estimated if required.  In practice, it may be known that $d_i$ comes from a finite set on the complex unit circle $C$, such as BPSK, QPSK, or $M$-PSK constellations.  Our estimator will not use such information and assumes that $d_i$ may take any value from $C$.  This relaxation enables a simple objective function and an estimator that can be rapidly computed, but may come with some statistical cost.  The simulations we perform in Section~\ref{sec:simulations} suggest that the cost is not too large.  In practice, it is often necessary to also estimate the complex amplitude $\alpha_0$.  We do not discuss this here.  However, given an accurate estimate of time offset, one can use existing techniques to estimate $\alpha_0$ after applying a matched filter~\cite{Mackenthun1994,Sweldens2001,McKilliam_leastsqPSKpilotsdata_2012,McKilliam_leastsqPSKnoncoICASSP_2012,ViterbiViterbi_phase_est_1983}.
+
+In this section, we assume that the transmit pulse is such that $g(t)$ and its shifts $g(t - iT)$ are orthonormal, that is, the inner products
+\begin{align}
+\langle g(t &- iT), g(t - kT) \rangle \nonumber \\
+&= \int_{\infty}^{\infty} g(t - iT)g^*(t-kT) \, dt = \begin{cases} 1 & i=k \\ 0 & i \neq k, \end{cases} \label{eq:contorthpulse}
+\end{align}
+where superscript $^*$ denotes the complex conjugate.  This orthogonality condition is satisfied by root Nyquist pulses.  For example, $g(t)$ could be a rectangular pulse with pulse width $T$,
+\[
+g(t) = \frac{\rect{t/T}}{\sqrt{T}} = \begin{cases} \frac{1}{\sqrt{T}} & \abs{t} < T/2 \\
+0 & \text{otherwise},
+ \end{cases}
+ \]
+or a sinc pulse, 
+ \[
+g(t) = \sqrt{T}\frac{\sin(\pi t / T)}{\pi t} = \frac{\sinc(t/T)}{\sqrt{T}},
+\]
+or a root raised cosine pulse with symbol period $T$.  %In later sections we will relax this orthogonality condition, and allow for a wider range of transmission pulses.
+
+We take a least squares approach.  Define the objective function
+\begin{equation}\label{eq:LSatd}
+LS(\alpha,\tau,\{d_i, i \in D\}) = \int_{-\infty}^{\infty}\abs{ r(t) - \alpha x(t - \tau) }^2 \, dt,
+\end{equation}
+where $\abs{\cdot}$ denotes complex magnitude.  Our estimator is the minimiser of this objective function,
+\[
+\hat{\tau} = \arg\min_{\tau \in \reals} \min_{\alpha \in \complex} \min_{d_i \in C} LS(\alpha,\tau,\{d_i, i \in D\}).
+\]
+Appendix~\ref{app:obtaining-sstau} shows that minimisation with respect to $\alpha$ and the data symbols $\{d_i, i \in D\}$ can be performed analytically to obtain the simpler objective function
+\begin{align} 
+LS(\tau) &= \min_{\alpha \in \complex} \min_{d_i \in C} LS(\alpha,\tau,\{d_i, i \in D\}) \nonumber \\
+&= A - \tfrac{1}{L} \big(Z(\tau) + \abs{Y(\tau)}\big)^2, \label{eq:LSt}
+\end{align}
+where $A = \dotprod{r(t)}{r(t)}$ is the energy of the received signal that does not depend on $\tau$,
+\begin{align}
+Y(\tau) &=  \dotprod{r(t)}{x_p(t- \tau)} \nonumber \\
+&= \sum_{i \in P} p_i^*\dotprod{r(t)}{g(t - iT - \tau)}, \label{eq:defnY}
+\end{align}
+and
+\begin{equation}\label{eq:defnZ}
+Z(\tau) = \sum_{i \in D} \abs{\dotprod{r(t)}{g(t - iT - \tau)}}.
+\end{equation}
+Our estimator of time offset $\hat{\tau}$ is the minimiser of $LS(\tau)$, that is,
+\[
+\hat{\tau} = \arg\min_{\tau \in \reals} LS(\tau).
+\]
+If $Y(\tau)$ and $Z(\tau)$ are known for some $\tau$ then $LS(\tau)$ can be computed easily.  However, both $Y$ and $Z$ contain integrals that probably cannot be computed in practice.  In Section~\ref{sec:discr-asynchr-case} we consider a discrete-time version of this estimator.  In the discrete-time setting the analogous functions for $Y$ and $Z$ can be computed efficiently. %as we show in Section~\ref{sec:computing-estimator}.
+
+It is interesting to observe some properties of $LS(\tau)$.  If the signal contains no data symbols, that is, $D = \emptyset$, then $Z(\tau) = 0$ and $LS(\tau)$ becomes
+\[
+LS_{\text{informationless}}(\tau)  = A - \tfrac{1}{L} \abs{Y(\tau)}^2,
+\]
+where we have included the subscript `informationless' to highlight the fact that if the transmitted signal contains only pilots and no data, then no information is transmitted.  Minimising this is equivalent to correlating the received signal with the transmitted signal and choosing the time offset that corresponds to the maximum magnitude correlation.  If we have a signal with both pilots and data, but we ignore the data component, and only use the pilot signal for synchronisation, then the corresponding objective function is
+\[
+LS_{\text{pilotsonly}}(\tau)  = A - \tfrac{1}{\abs{P}} \abs{Y(\tau)}^2.
+\]
+This is the commonly used estimator that correlates the received signal with the pilot signal.  %If the received signal contains no pilots and only data, that is, $P = \emptyset$, then $Y(\tau) = 0$ and
+%\[
+%LS_{\text{dataonly}}(\tau) =  A - \tfrac{1}{L} Z(\tau)^2,
+%\]
+%which acts as an `amplitude accumulator', that is $Z(\tau)$ is the accumulated amplitude of the received signal after matched filtering with the transmit pulse $g(t)$.
+
+It is also interesting to note the similarity between $LS(\tau)$ and the frame synchronisation algorithms of Massey~\cite{Massey1972optimumframe}.  In particular, Massey's frame synchroniser for the high signal to noise ratio setting (see equation (7) and (11) in~\cite{Massey1972optimumframe} and also equation (3.29) in~\cite{Robertson_frame_sync_phd_1995}) has a striking resemblance to $LS(\tau)$.  Nielsen~\cite{Nielsen_onmassey_1973} showed that Massey's high signal to noise ratio estimator can be derived using the `generalised likelihood ratio' approach~\cite[p.~86-96]{vanTrees_det_est_mod_part1_1968}, and that derivation has some resemblance to our derivation of $LS(\tau)$ in Appendix~\ref{app:obtaining-sstau}.  The setting in~\cite{Massey1972optimumframe} is that of frame synchronisation, where symbol synchronisation and matched filtering have already been performed by some other means.  Massey's objective function is then searched over a discrete set of time-shifts that are integer multiples of the symbol period.  The estimator we develop here combines frame synchronisation and symbol synchronisation into a single operation, that of estimating time offset.  %We also allow for unknown signal attenuation and phase offset.
+
+
+\section{The estimator in discrete-time}\label{sec:discr-asynchr-case}
+
+In this section, we consider a discrete-time version of the estimator derived in Section~\ref{sec:cont-asynchr-case}.  This discrete version is practical in modern communications systems where the received signal is typically both noisy and sampled.  The received signal is
+\begin{align}
+r_n = r(n T_s) &= w_n + \alpha_0 x(T_sn - \tau_0) \nonumber \\
+&= w_n + \alpha_0 \sum_{i\in\ints} g(T_sn - Ti - \tau_0) s_i, \label{eq:rndefn}
+\end{align}
+where $n$  is an integer and $T_s$ is the sampling period and $\{w_n, n \in \ints \}$ is a sequence of noise variables.  % This model for the sampled signal assumes \emph{instantaneous} sampling.  This is a reasonable approximation for highly oversampled signals, that is, when $\tfrac{1}{T_s}$ is large compared to the bandwidth of $g(t)$.  If this instantaneous sampling assumption is not valid, but the sampling device can be reasonably modelled by a linear time-invariant system with impulse response $g_s(t)$, then the effect of sampling can be included by replacing $g(t)$ with the convolution of $g(t)$ and $g_s(t)$, that is, by replacing $g(t)$ with
+% \[
+% g_s(t) * g(t) = \int_{-\infty}^{\infty} g(\nu) g_s(t - \nu) d\nu.
+% \]
+The derivation for the continuous-time setting in Section~\ref{sec:cont-asynchr-case} motivates us to consider the time offset estimator $\hat{\tau}$ corresponding to the minimiser of $LS(\tau) =  A - \tfrac{1}{L} \big(Z(\tau) + \abs{Y(\tau)}\big)^2$, as in Section~\ref{sec:cont-asynchr-case}, but where the inner product is replaced by the discrete inner product
+\[
+\dotprod{u(t)}{v(t)} = \sum_{n\in\ints}u(T_s n)v^*(T_s n).
+\]
+Here, we have abused notation by reusing $LS$, $Y$, $Z$ and $\dotprod{\cdot}{\cdot}$, but this should not cause confusion as for the remainder of this paper, we will always consider the discrete case with the above discrete definition of the inner product.
+%Before moving onto algorithmic issues we discuss some of the assumptions made so far regarding the transmit pulse $g(t)$.  In practice, $g(t)$ is often a truncated pulse, such as a truncated sinc or truncated root raised cosine.  Also, if instantaneous sampling is not a reasonable assumption then the pulse observed at the receiver is $g_s(t) * g(t)$, and the precise form of this pulse may not be freely controllable.  In these cases (and potentially many others) the orthogonality condition~(\ref{eq:contorthpulse}) may not hold.  However, the estimator can still perform well with practical pulse shapes where the orthogonality condition holds only approximately, as we indicate using simulations in Section~\ref{sec:simulations}.  
+%Finally, note that our estimator operates on the sampled signal directly.  There is no need for resampling or interpolation as common in `all-digital' receiver implementations~\cite{Gardner_interp_digicomms_1993, ErupGardner_interp_digicomms_2_1993,Kim_opt_inter_filter_symbol_timing_1997,Kim_inter_filt_timing_2005,Mehlan1993_carrier_and_time_offset_MSK}.  The process of `interpolation' is built into the inner products in~\eqref{eq:innerprodfinite} to be described.  
+In what follows we assume that the transmit pulse, that is, the function $g : \reals \mapsto \reals$, is known, and computable at the receiver.  If it is computationally complex to compute $g(t)$ for any given $t$ then it is prudent to precompute $g$ on a fine grid, and store the values in a lookup table.  %Simple interpolation (for example linear interpolation) can then be used based on the values in the table.  
+This can be made as accurate as desired by appropriately choosing the size of the lookup table. %It is useful to observe the relationship between equation (2) by Gardner~\cite{Gardner_interp_digicomms_1993}, where our $g$ is Gardner's $h_I$.  Erup and Gardener et. al.~\cite{ErupGardner_interp_digicomms_2_1993} call $h_I$ `ficticious' with the intent
+
+
+\section{Computing the estimator}\label{sec:computing-estimator}
+
+In this section, we describe practical algorithms for computing the minimiser of $LS$ given the discrete received sequence $\{r_n, n \in \ints\}$ from~\eqref{eq:rndefn}.  We make the assumption that the true time-offset $\tau_0$ is known to lie in some compact interval $[\tau_{\text{min}}, \tau_{\text{max}}] \subset \reals$.  Our estimator is then the minimiser of $LS(\tau)$ over this interval,
+\[
+\hat{\tau} = \arg\max_{\tau \in [\tau_{\text{min}}, \tau_{\text{max}}]} LS(\tau).
+\]
+To compute $\hat{\tau}$ we first compute $LS(\tau)$ on a finite uniform grid of values
+\[
+\tau_{1}, \tau_2, \dots, \tau_K
+\]
+where $\tau_{i+1} = \tau_i + \Delta$, and $\Delta = T/c$ is a fraction of the symbol period, and $c$ is a positive integer.  We put
+\[
+\tau_1 = \tau_{\text{min}} \qquad \text{and} \qquad \tau_K = \floor{\frac{\tau_{\text{max}}}{\Delta}}\Delta,
+\]
+so that the grid is evenly spaced over the interval $[\tau_{\text{min}}, \tau_{\text{max}}]$ and the spacing between the grid points is equal to $\Delta = T/c$.  In this case, the size of the grid is
+\[
+K = \floor{\frac{\tau_{\text{max}} - \tau_{\text{min}}}{\Delta}} + 1.
+\]  
+We will describe efficient algorithms for computing all of $LS(\tau_1), \dots, LS(\tau_K)$.  Provided that $\Delta$ is chosen sufficiently small (equivalently $c$ is chosen sufficiently large) the grid point that minimises $LS(\tau)$, denoted by $\tilde{\tau}$, is a good approximation of the true minimiser $\hat{\tau}$.  An optimisation procedure, initialised at $\tilde{\tau}$, can then be used to obtain $\hat{\tau}$.  %In this paper, we will not discuss the numerical procedure for obtaining $\hat{\tau}$ from $\tilde{\tau}$, we rather focus on computing $\tilde{\tau}$ efficiently.
+We discuss practical optimisation procedures in Section~\ref{sec:numerical-refinement}.  For now, we focus on computing the approximation $\tilde{\tau}$.
+
+The complexity of our algorithms will depend on the grid size $K$ and the number of symbols $L$.  The size of $K$ depends on $c$ and also on the length of the interval $[\tau_{\text{min}}, \tau_{\text{max}}]$ within which the true time offset is assumed to lie.  Simulations in Section~\ref{sec:simulations} suggest that $c = 15$ is sufficiently large to ensure that $\tilde{\tau}$ is sufficient close to $\hat{\tau}$, and so, we treat $c$ as a constant in the complexity analysis that follows.   For some applications the interval $[\tau_{\text{min}}, \tau_{\text{max}}]$ might be small and $K$ treated as constant.  However, in the worst case the interval $[\tau_{\text{min}}, \tau_{\text{max}}]$ might grow proportionally with $L$ and $K$ would correspondingly grow proportionally with $L$.  For the complexity analysis that follows we will assume this worst case, that is, we assume $K = O(L)$.
+
+
+To compute all of $LS(\tau_1), \dots, LS(\tau_K)$ we need to compute all of $Y(\tau_1), \dots, Y(\tau_K)$ and all of $Z(\tau_1), \dots, Z(\tau_K)$.  A naive approach is to compute 
+\[
+Y(\tau_k) = \sum_{i \in P} p_i^* \dotprod{r(t)}{g(t - iT - \tau_k)},
+\]
+and 
+\[
+Z(\tau_k) = \sum_{i \in D} \abs{ \dotprod{r(t)}{g(t - iT - \tau_k)} }
+\] 
+directly for each $k=1, \dots, K$.  % The number of operations required to compute $Y(\tau_k)$ has order $O(F \abs{P})$ by using~\eqref{eq:innerprodfinite} to compute the inner products, where
+% \[
+% F = \floor{\frac{t_{\text{max}} - t_{\text{min}}}{T_s}} + 1 \geq \abs{G}
+% \]
+% upper bounds the number of samples that fit inside the interval $[t_{\text{max}},t_{\text{min}}]$.  %In modern communications systems the transmitter typically represents $g(t)$ in discrete time, using a number of samples, often called \emph{filter taps}.  In this case, $F$ is related to the number of filter taps used to represent $g(t)$ at the transmitter.
+% Similarly $Z(\tau_k)$ requires order $O(F\abs{D})$ operations. The number of operations required to compute $LS(\tau_k)$ is then $O(F\abs{P} + F\abs{D}) = O(FL)$, and to compute all of $LS(\tau_1), \dots, LS(\tau_K)$ requires $O(KFL)$ operations.  Let
+% \[
+% H = \frac{\tau_{\text{max}} - \tau_{\text{min}}}{T}
+% \]
+% be the fraction of symbols that fit inside $[\tau_{\text{min}}, \tau_{\text{max}}]$, so that $K \leq cH + 1$.  For the purpose of analysing computational complexity we will treat $c$ as a constant, so $O(K) = O(H)$ and the number of operations required by the naive approach has order $O(HFL)$.  In what follows we will measure the complexity of our algorithms in terms of $H$, $F$ and $L$.
+The inner product
+\begin{align*}
+\dotprod{r(t)}{g(t - iT - \tau)} &= \sum_{n\in\ints}r(nT_s)g^*(T_sn - Ti - \tau) \\
+&= \sum_{n\in\ints} r_n g^*(T_sn - Ti - \tau)
+\end{align*}
+involves an infinite sum.  To alleviate this, we make the assumption that the transmit pulse $g(t)$ has finite duration, that is, $g(t)$ is nonzero only for $t$ in some open interval $(t_{\text{min}},t_{\text{max}})$.  In this case, the inner product can be computed by the finite sum
+\begin{equation}\label{eq:innerprodfinite}
+\dotprod{r(t)}{g(t - iT - \tau)} =  \sum_{n \in G} r_n g^*(T_sn - Ti - \tau),
+\end{equation}
+where 
+\[
+G = \{ n \in \ints \mid T_s n - Ti - \tau \in (t_{\text{min}},t_{\text{max}}) \}.
+\]
+This assumption is reasonable in practical systems that make use of truncated transmit pulses. We assume that the pulse duration $(t_{\text{min}},t_{\text{max}})$ does not depend on $L$.  In this case, computing~\eqref{eq:innerprodfinite} for any particular $\tau$ requires a constant number of operations.
+
+Now, computing $LS(\tau)$ for any particular $\tau$ requires computing and summing $\sabs{ P \cup D} = L$ inner products.  Since each inner product requires a constant number of operations, the overall complexity is $O(L)$.  Thus, a naive approach to computing all of $LS(\tau_1), \dots, LS(\tau_K)$ requires $O(KL) = O(L^2)$ operations.
+In the following sections we describe a much faster algorithm for computing all of $LS(\tau_1), \dots, LS(\tau_K)$ that requires $O(L\log L)$ operations in the worst case.  This algorithm requires that the sample period $T_s$ is rationally related to the symbol period $T$, that is, $T_s = \tfrac{p}{q}T$ where $p$ and $q$ are relatively prime integers.  %This property is a common assumption in the literature (it is even common to assume the stronger condition that $T$ is a multiple of $T_s$~\cite{Oerder_synch_square_circstat_1988}).
+%It is the case that the value of the denominator $numerator$ places a lower bound on the value of $c$ (correspondingly an upper bound on $\Delta$).  This means that, if $q$ is large, then we are forced to choose a fine grid, with $K$ large.  This can unavoidably increase the algorithms complexity.
+The complexity of our algorithm does depend on the fraction $\tfrac{p}{q} = \tfrac{T_s}{T}$, but does not depend on either $p$ or $q$ individually.  Thus, this assumption is a weak one because $p$ and $q$ can be chosen large so that the ratio $\tfrac{p}{q}$ closely approximates any desired $\tfrac{T_s}{T}$~\cite{Mordell_Diophantine_equations_1969}.  This can be done without appreciably affecting the complexity of the algorithm.  
+
+The complexity will depend on the difference between the smallest symbol index $\min(P \cup D)$ and the largest symbol index $\max(P\cup D)$.  In practice it is common that the symbols are in a single contiguous block, that is, $P \cup D = \{1,2,\dots,L\}$.  In this case, $\max(P\cup D) - \min(P\cup D) = L-1$.  Our estimator does not require the symbols to be in a single contiguous block.  However, for the complexity analysis we will assume that $\max(P\cup D) - \min(P\cup D) = O(L)$.  We also assume that the number of pilot symbols $\abs{P}$ and the number of data symbols $\abs{D}$ grow proportionally with $L$.  That is, $\abs{P} = O(L)$ and $\abs{D} = O(L)$.
+
+%Perhaps the weakest assumption that can be made is that the number of samples observed by the reciever is finite.  For example, the reciever may observe $N$ consecutive samples $r_1, r_2, \dots, r_N$, and we put the remaining samples $r_n = 0$ whenever $n \notin \{1, 2, \dots, N\}$.  Now, the inner products are always finite sums
+%\begin{equation}\label{eq:innerproddirect}
+%\dotprod{r(t)}{g(t - iT - \tau)} =  \sum_{n=1}^N r_n g^*(T_sn - Ti - \tau).
+%\end{equation}
+%In practice, it will always be the case that the number of observed samples is finite, so this assumption is reasonable.
+
+% A result of these assumptions is that the receiver only requires those values of $r_n$ within which the signal can reside, that is, only for $n$ satisfying $A \leq n \leq B$ where
+% \[
+% A = \ceil{\frac{t_{\text{min}} + \tau_{\text{min}} + T\min(P \cup D) }{T_s}},
+% \]
+% \[
+% B = \floor{\frac{t_{\text{max}} + \tau_{\text{max}} + T\max(P \cup D) }{T_s}},
+% \]
+% and where $\min(P \cup D)$ and $\max(P \cup D)$ denote the minimum and maximum symbol indices, and $\ceil{\cdot}$ and $\floor{\cdot}$ denote the smallest integer greater than or equal to, and the largest integer less than or equal to their arguments.  In this way, the receiver only need observe a finite number of elements $\{r_n, A \leq n  \leq B \}$.  %This is important, because it is not possible for any practical receiver to observe all of the elements in the infinite sequence $\{r_n, n \in \ints\}$.
+
+%\subsection{Procedural description of the algorithm} \label{sec:proc-descr-algor}
+
+We now present a procedural description of the algorithm.  The details of each step are given in the sections that follow.
+
+\begin{algorithm}\label{alg:algorithm}
+Computes time offset estimator $\hat{\tau}$ by minimising $LS(\tau)$.
+\begin{enumerate}
+\item \label{computebgk} Compute and store the value of $v_k$ from~\eqref{eq:bkdefn} for all  
+\[
+k = 1 + c\min(P \cup D), \dots, K + c\max(P \cup D).
+\]  
+Each $v_k$ can be efficiently computed using~\eqref{eq:bkdefn} and the procedure described in Section~\ref{sec:computing-h_ell-k}.
+\item \label{compZk} Compute and store $Z_k = Z(\tau_k)$ for all $k = 1,\dots, K$ using either the direct~\eqref{eq:sumabsbkD}, recursive~\eqref{eq:Zrecursive} or fast Fourier transform (FFT) based procedures described in Section~\ref{sec:computing-ztau-grid}. 
+\item \label{compYk} Compute and store $Y_k = Y(\tau_k)$ for all $k = 1,\dots, K$ using either the direct or FFT based procedures described in Section~\ref{sec:comp-ytau_1-dots}.
+\item \label{compmaxk} Find the $k \in \{1, \dots, K\}$ that maximises $Z_k + \abs{Y_k}$.  That is, compute
+\[
+\tilde{k} = \arg\max_{k = 1, \dots, K} \big( Z_k + \abs{Y_k} \big).
+\]
+\item \label{comptotime} Compute the approximate estimate
+\[
+\tilde{\tau} = \tau_1 + \Delta (\tilde{k}-1) = \tau_{\text{min}} + \Delta (\tilde{k}-1).
+\]
+\item \label{compbrent} Apply a numerical minimisation procedure to $LS(\tau)$ initialised with $\tilde{\tau}$ to find the minimiser $\hat{\tau}$.  Section~\ref{sec:numerical-refinement} describes an implementation of Brent's method~\cite{Brent_opt_no_derivs_1973} for this purpose.
+\end{enumerate}
+\end{algorithm}
+
+In the following sections we show that steps~\ref{computebgk} and \ref{compbrent} require $O(L)$ operations.  Steps~\ref{compZk} and~\ref{compYk} require $O(L\log L)$ operations in the worst case.  Step~\ref{compmaxk} requires $O(K) = O(L)$ operations and step~\ref{comptotime} requires a constant number of operations.  The total worst case complexity is therefore $O(L\log L)$.
+
+\subsection{Computing $Z(\tau_1), \dots, Z(\tau_K)$}\label{sec:computing-ztau-grid}
+
+Let $a$ and $b$ be relatively prime positive integers such that
+\[
+\frac{a}{b} = \frac{pc}{q}
+\] 
+and observe that
+\begin{equation}\label{eq:deltaabc}
+\Delta = \frac{T}{c} = \frac{q}{pc}T_s = \frac{b}{a} T_s.
+\end{equation}
+Let
+\begin{equation} \label{eq:zzerofill}
+z_n = \begin{cases} 
+r_{n/a} & n/a \in \ints \\
+0 & \text{otherwise}
+\end{cases}
+\end{equation}
+be a zero filled version of the received sequence $r_n$ and let
+\begin{equation} \label{eq:zln}
+z_{\ell,n} = z_{bn + \ell}.
+\end{equation}
+Putting $Z_k = Z(\tau_k)$ we have
+\begin{align}
+Z_k  &= \sum_{i \in D} \abs{\dotprod{r(t)}{g(t - iT - \tau_k)}}  \label{eq:sumabsbkD1} \\
+&= \sum_{i \in D} \abs{\sum_{n\in \ints} r_ng^*(n T_s - iT - \tau_k)}  \nonumber \\
+&= \sum_{i \in D} \abs{\sum_{n\in\ints}z_{an}g^*(nT_s - iT - \tau_k)} \nonumber  \\
+&= \sum_{i \in D} \abs{\sum_{n\in\ints}z_ng^*(n\tfrac{1}{a}T_s - iT - \tau_k)},  \nonumber
+\end{align}
+where the last line follows because $z_n = 0$ whenever $n$ is not a multiple of $a$.  For any function $f$, 
+\[
+\sum_{n\in\ints} f(n) = \sum_{n\in\ints}\sum_{\ell = 0}^{b-1}f(bn + \ell),
+\]  
+and so,
+\begin{align*} 
+Z_k &= \sum_{i \in D} \abs{\sum_{n\in\ints}\sum_{\ell = 0}^{b-1} z_{bn+\ell}g^*(n\tfrac{b}{a}T_s +  \tfrac{\ell}{a}T_s - iT - \tau_k)} \\
+&= \sum_{i \in D} \abs{ \sum_{\ell = 0}^{b-1} \sum_{n\in\ints} z_{\ell,n}g^*( n\Delta - iT - \tau_{k} + \tfrac{\ell}{a}T_s)} \\
+&= \sum_{i \in D} \abs{\sum_{\ell = 0}^{b-1} \sum_{n\in\ints}z_{\ell,n}g_{\ell,k-n+ci}}, 
+\end{align*}
+where we put
+\begin{equation}\label{eq:gln}
+\begin{split}
+g_{\ell,n} &= g^*\big( (1-n)\tfrac{b}{a}T_s - \tau_{\text{min}} + \tfrac{\ell}{a}T_s\big) \\
+&= g^*\big( (1-n)\Delta - \tau_1 + \tfrac{\ell}{a}T_s\big),
+\end{split}
+\end{equation}
+so that $g_{\ell,k-n+ic} = g^*\big( n\Delta - iT - \tau_{k} + \tfrac{\ell}{a}T_s\big)$.  Letting
+\begin{equation}\label{eq:hkseqdefn}
+h_{\ell,k} = \sum_{n\in\ints}z_{\ell,n}g_{\ell,k-n}
+\end{equation}
+be the convolution of the sequence $\{z_{\ell,n}, n \in \ints\}$ with the sequence $\{g_{\ell,n},n \in \ints\}$ and letting
+\begin{equation}\label{eq:bkdefn}
+v_k = \sum_{\ell=0}^{b-1}h_{\ell,k},
+\end{equation}
+we have
+\begin{equation} \label{eq:sumabsbkD}
+Z_k = \sum_{i \in D} \abs{\sum_{\ell = 0}^{b-1} h_{\ell,k+ci}} = \sum_{i \in D} \abs{v_{k+ci}}.
+\end{equation}
+
+Readers familiar with multirate systems and filter banks will recognise~\eqref{eq:sumabsbkD1}~to~\eqref{eq:sumabsbkD} as similar to the derivation of a polyphase filter~\cite{Vaidyanthan_multirate_polyphase_1993,Crochiere_polyphase_procieee_1981}.  The $h_{\ell,k}$ correspond with the individual filter banks.  The computational complexity of our algorithms do depend on the fraction $\tfrac{p}{q}$, but this structure ensures that the complexity will not depend on the value of either $p$ or $q$ individually.  This is shown in Section~\ref{sec:computing-h_ell-k}.  %This is desirable.  We would not like our algorithms to be fast when, say $\tfrac{p}{q} = \tfrac{1}{4}$, but slow when $\tfrac{p}{q} = \tfrac{1001}{4000}$.
+
+To compute all of $Z_1, \dots, Z_K$ we require the values of $v_k$ for $k = 1 + c\min(D), \dots, K + c\max(D)$, where $\max(D)$ and $\min(D)$ are the largest and smallest indices in $D$.  %To compute each $v_k$ we require the value of $h_{\ell,k}$ for $\ell = 0, \dots, b-1$.  
+Section~\ref{sec:computing-h_ell-k} describes an algorithm for computing all of the required $v_{k}$ with $O(L)$ operations.  
+The required values are stored so that accessing any $v_k$ requires constant time.  Given these values there are now three options for computing $Z_1,\dots,Z_K$.  
+
+Firstly, $Z_1,\dots,Z_K$ can be computed directly using~\eqref{eq:sumabsbkD}.  This requires $O(\abs{D}K) = O(L^2)$ operations in the worst case. Nevertheless, this approach can be efficient in the event that either of $\abs{D}$ or $K$ is small.  If both $\abs{D}$ and $K$ are large, then the FFT can be used to compute $Z_1, \dots, Z_K$ more efficiently.  To see this, let
+\[
+f_i = \begin{cases}
+1 & -i/c \in D \\
+0 & \text{otherwise}.
+\end{cases}
+\] 
+Now,
+\[
+Z_k = \sum_{i \in \ints} f_{-ci} v_{k+ci} = \sum_{i \in \ints} f_i v_{k-i}
+\]
+is a convolution between the sequences $\{f_{i}\}$ and $\{v_i\}$. Observe that $f_i$ is nonzero only for $i = -c\max(D), \dots, -c\min(D)$,
+and so,
+%\[
+%Z_k = \sum_{i = -c\max(D)}^{-c\min(D)} f_i v_{k-i}.
+%\]
+this convolution can be computed using a FFT of length $K + c\max(D) - c\min(D) = O(L)$.  This requires $O(L\log L)$ operations.
+
+% For any $k$ a direct approach to computing $Z_k$ using~\eqref{eq:sumabsbkD} requires $O(\abs{D})$ operations.  So computing all of $Z_1, \dots, Z_K$ requires $O(K\abs{D}) = O(H\abs{D})$ operations.  If both $H$ and $\abs{D}$ are large, then the fast Fourier transform can be used to compute $Z_1, \dots, Z_K$ more efficiently.  To see this let
+% \[
+% f_i = \begin{cases}
+% 1 & -i/c \in D \\
+% 0 & \text{otherwise}.
+% \end{cases}
+% \] 
+% Now,
+% \[
+% Z_k = \sum_{i \in \ints} f_{-ci} v_{k+ci} = \sum_{i \in \ints} f_i v_{k-i}
+% \]
+% is a convolution between the sequences $\{f_{i}\}$ and $\{v_i\}$. Observe that $f_i$ is nonzero only for 
+% \[
+% i = -c\max(D), -c\max(D) + 1, \dots, -c\min(D),
+% \]
+% and so
+% \[
+% Z_k = \sum_{i = -c\max(D)}^{-c\min(D)} f_i v_{k-i}.
+% \]
+% This finite convolution can be computed using a fast Fourier transform of length $K + c\max(D) - c\min(D)$.  For the sake of comparison, let us assume that $\max(D) - \min(D) = O(\abs{D})$, so that the number of operations required has order $O((H+\abs{D})\log(H+\abs{D}))$.  This can be faster than the direct approach when $H$ and $\abs{D}$ are large. 
+
+Finally, in many practical scenarios the data symbols occur in a small number of contiguous blocks and, in this case, a fast recursive algorithm exists.  We will describe the algorithm for the case when the data symbols occur in a single contiguous block, that is $D = \{ \min(D), \min(D)+1, \dots, \max(D) \}$.  In this case,
+\begin{align*}
+Z_{k+c} &= \sum_{i \in D} \abs{v_{k+c(i+1)}} \\
+&= Z_{k} - \abs{v_{k+c\min(D)}} + \abs{v_{k+c\max(D) + c}},
+\end{align*}
+and so, $Z_k, Z_{k+c}, Z_{k+2c}, \dots$ satisfy the recursion
+\begin{align}
+&Z_{k+(m+1)c} \nonumber \\
+&= Z_{k+mc} - \abs{v_{k+mc + c\min(D)}} + \abs{v_{k+ mc + c\max(D)+c}}. \label{eq:Zrecursive}
+\end{align}
+Each of $Z_1, \dots, Z_{c}$ can be computed directly using~\eqref{eq:sumabsbkD} in $O(\abs{D}) = O(L)$ operations and the remaining elements $Z_{c+1}, \dots, Z_{K}$ can be computed using the recursion above with only $O(K) = O(L)$ operations.  The total computational complexity of this recursive approach is $O(L)$.  A similar approach applies when the data symbols occur in a small number of contiguous blocks.
+
+We have now shown that all of $Z_1,\dots,Z_K$ can be computed using $O(L\log L)$ operations in the worst case.
+
+\subsection{Computing $Y(\tau_1), \dots, Y(\tau_K)$}\label{sec:comp-ytau_1-dots}
+
+Let $v_k$ be defined as in~\eqref{eq:bkdefn} and put $Y_k = Y(\tau_k)$.  By working analogous to that from~\eqref{eq:sumabsbkD1}~to~\eqref{eq:sumabsbkD},
+\begin{align}
+Y_k &= \sum_{i \in P} p_i^* \dotprod{r(t)}{g(t - iT - \tau_k)} \nonumber \\
+&= \sum_{i \in P} p_i^* \sum_{n\in \ints} r_ng^*(nT_s - iT - \tau_k) \nonumber  \\
+&= \sum_{i \in P} p_i^* v_{k+ci}. \label{eq:Yksumdirect}
+\end{align}
+To compute all of $Y_1, \dots, Y_K$ we require $v_k$ for $k = 1 + c\min(P), \dots, K + c\max(P)$.  As in the previous section, the required values of $v_k$ can be computed and stored so that accessing them requires constant time.  There are now two options for computing $Y_1, \dots, Y_K$.
+
+Firstly, $Y_1, \dots, Y_K$  can be computed directly using~\eqref{eq:Yksumdirect}. The number of operations required is $O(K\abs{P}) = O(L^2)$ in the worst case.  Nevertheless, this approach can be efficient in the event that either of $\abs{P}$ or $K$ is small.  If both $\abs{P}$ and $K$ are large, then the FFT can be used to efficiently compute $Y_1, \dots, Y_K$.  To see this, let
+\[
+a_i = \begin{cases}
+p_{-i/c}^* & -i/c \in P \\
+0 & \text{otherwise},
+\end{cases}
+\] 
+so that $p_i^* = a_{-ci}$.  Now,
+\[
+Y_k = \sum_{i \in \ints} a_{-ci} v_{k+ci} = \sum_{i \in \ints} a_i v_{k-i}
+\]
+is a convolution between the sequences $\{a_{i}\}$ and $\{v_i\}$.  Observe that $a_i$ is nonzero only for $i = -c\max(P), \dots, -c\min(P)$, %so that
+%\[
+%Y_k = \sum_{i = -c\max(P)}^{-c\min(P)} a_i v_{k-i}.
+%\]
+and so, this convolution can be computed using a FFT of length $K + c\max(P) - c\min(P) = O(L)$.  This requires $O(L \log L)$ operations.
+  
+%For the sake of comparison, let us assume that $\max(P) - \min(P) = O(\abs{P})$, so that the number of operations required has order $O((H+\abs{P})\log(H+\abs{P}))$.  This can be faster than the direct approach if $H$ and $\abs{P}$ are large.
+
+We have now shown that all of $Y_1,\dots,Y_K$ can be computed using $O(L\log L)$ operations in the worst case.
+
+\subsection{Computing $v_k$ and $h_{\ell,k}$}\label{sec:computing-h_ell-k}
+
+During the previous sections we assumed that certain values of $v_k$ from~\eqref{eq:bkdefn} had already been computed.  In this section we describe how to perform these computations using only $O(L)$ operations.  To compute $v_k$ we need to compute
+\[
+h_{\ell,k} = \sum_{n\in\ints}z_{\ell,n}g_{\ell,k-n} \qquad \text{for all $\ell = 0, \dots, b-1$},
+\]
+where $z_{\ell,n}$ and $g_{\ell,n}$ are defined in~\eqref{eq:zln} and~\eqref{eq:gln}. 
+The transmit pulse $g(t)$ is nonzero only when $t \in (t_{\text{min}}, t_{\text{max}})$, and so, $g_{\ell,n}$ is nonzero only when
+\[
+-(n-1) \Delta - \tau_1 + \tfrac{\ell}{a}T_s \in (t_{\text{min}}, t_{\text{max}}),
+\]
+that is, only when $A^\prime < n < B^\prime$ where 
+\[
+A^\prime = 1 - \frac{t_{\text{max}} + \tau_1}{\Delta} + \frac{\ell}{b} \;\;\;\; \text{and} \;\;\;\; B^\prime =  1 - \frac{t_{\text{min}} + \tau_1}{\Delta} + \frac{\ell}{b},
+\]
+where we use that $\frac{\ell}{a\Delta}T_s = \tfrac{\ell}{b}$ as a result of~\eqref{eq:deltaabc}.  Now $h_{\ell,k}$ can be expressed as the finite sum
+\begin{equation}\label{eq:bkbyconvslow}
+h_{\ell,k} = \sum_{n \in G^{\prime}}z_{\ell,n}g_{\ell,k-n},
+\end{equation}
+where $G^{\prime} = \{ n \mid  A^\prime \leq  k-n  \leq B^\prime \}$.  
+
+The number of elements in $G^\prime$ is a constant independent of $L$.  Thus, computing each $h_{\ell,k}$ requires a constant number of operations.  Computing $v_k$ using~\eqref{eq:bkdefn} requires summing $b$ of these $h_{\ell,k}$ and therefore requires a number of operations that does not grow with $L$, but does grow proportionally with $b$.  Because $\tfrac{b}{a} = \tfrac{q}{pc} = \tfrac{T}{cT_s}$ the number of operations required grows proportionally with $q$.  As discussed in Section~\ref{sec:computing-estimator}, this is not desirable, since $q$ and $p$ may need to be large in order to represent the ratio $\tfrac{T}{T_s}$ of symbol to sample rate.  We now discuss a method to alleviate this problem.  A similar method is used in multirate filtering~\cite{Vaidyanthan_multirate_polyphase_1993,Crochiere_polyphase_procieee_1981}.
+
+Observe that the zero filled received sequence $z_{bn+\ell} = z_{\ell,n}$ is nonzero only for those integers $n$ satisfying $bn+\ell \equiv 0 \pmod a$.  So, the sum in~\eqref{eq:bkbyconvslow} simplifies to
+\begin{equation}\label{eq:bkbyconv}
+h_{\ell,k} = \sum_{n \in G^{\prime\prime}} z_{\ell,n}g_{\ell,k-n},
+\end{equation}
+where $G^{\prime\prime} = \{ n \in G^{\prime} \mid bn + \ell \equiv 0 \pmod a \}$.  Since $a$ and $b$ are relatively prime, there exist integers $n_0$ and $m_0$ such that $bn_0 + am_0 = 1$.  Both $n_0$ and $m_0$ can be computed using the extended Euclidean algorithm~\cite{Cormen2001}.  Multiplying by $-\ell$ we find that $-\ell b n_0 - \ell a m_0 \equiv - \ell$ and so $-\ell n_0 b + \ell \equiv 0 \pmod a$.  Thus, $G^{\prime\prime}$ contains those integers of the form $ma - \ell n_0$ that are contained in $G^\prime$.  That is,
+\[
+G^{\prime\prime} = \{ m a - \ell n_0 \mid m \in \ints \} \cap G^\prime.
+\]
+Equivalently,
+\[
+G^{\prime\prime} = \{ m a - \ell n_0 \mid B^{\prime\prime} < m < A^{\prime\prime}\},
+\]
+where 
+\[
+B^{\prime\prime} = \frac{k - B^\prime + \ell n_0}{a}, \qquad A^{\prime\prime} = \frac{k - A^\prime + \ell n_0}{a}.
+\]
+
+Observe that using~\eqref{eq:bkbyconv} instead of~\eqref{eq:bkbyconvslow} enables computation of $v_k$ in a number of operations that grows proportionally with the ratio $\frac{q}{p}$, rather than with $q$, because the number of elements in $G^{\prime\prime}$ is now proportional to $\frac{1}{a}$.  Thus, summing $b$ of these terms to produce $v_k$ requires a number of operations that grows proportionally to $\tfrac{b}{a} = \tfrac{q}{pc}$.
+%BLERG.  THIS IS NOT A COMPLETE ARGUMENT.  SEE BELOW FOR A SKETCH OF THE DETAILS.  YOU NEED TO BE CAREFUL WITH MODULA ARITHMETIC.
+
+In Section~\ref{sec:computing-ztau-grid} and~\ref{sec:comp-ytau_1-dots} we required the values of $v_k$ for $1 + c\min(P\cup D), \dots, K + c\max(P \cup D)$.  We assume that $\max(P \cup D) - \min(P \cup D) = O(L)$ and so, to compute all of the $v_k$ requires $O(L)$ operations.  The complexity grows proportionally to $\tfrac{q}{p}$ but does not grow with $p$ or $q$ individually.
+
+% We now show that using~\eqref{eq:bkbyconv} instead of~\eqref{eq:bkbyconvslow} enables computation of $v_k$ in a number of operations that grows proportionally with the ratio $\frac{q}{p}$, rather than with $q$.  The number of elements in $G^{\prime\prime}$ is $\sabs{G^{\prime\prime}}  = \floor{A^{\prime\prime}} - \floor{B^{\prime\prime}}$ where  $\floor{\cdot}$ denotes the largest integer less than or equal to its argument.  The total number of elements that require to be summed in the computation of $v_k$ is therefore
+% \[
+% \sum_{\ell  = 0}^{b-1} \sabs{G^{\prime\prime}} = \sum_{\ell  = 0}^{b-1} \big( \floor{A^{\prime\prime}} - \floor{B^{\prime\prime}} \big).
+% \] 
+
+
+% Define constants
+% \[
+% F_{\text{max}} = \frac{k - 1}{a} + \frac{t_{\text{max}} + \tau_1}{a\Delta},  \qquad F_{\text{min}} = \frac{k - 1}{a} + \frac{t_{\text{min}} + \tau_1}{a\Delta}
+% \]
+% so that
+% \[
+% A^{\prime\prime} = F_{\text{max}} - \frac{\ell}{b} m_0, \qquad B^{\prime\prime} = F_{\text{min}} - \frac{\ell}{b} m_0,
+% \]
+% where we have used that
+% \[
+% \frac{\ell n_0}{a} - \frac{\ell}{ab} = \frac{\ell}{a}\big( n_0 - \frac{1}{b}  \big) = -\frac{\ell}{b}m_0,
+% \]
+% which follows from the identity $bn_0 + am_0 = 1$.  Let $\fracpart{\cdot} = x - \floor{\cdot}$ denote the fractional part of its argument.  Observe that $b$ does not divide $m_0$ because $b n_0 + a m_0 \equiv a m_0 \equiv 1 \pmod b$.  So, the set of fractional parts
+% \[
+% \left\{ \fracpart{-\frac{\ell}{b}m_0} \mid \ell = 0, 1, \dots, b-1 \right\} = \left\{ 0, \frac{1}{b}, \dots, \frac{b-1}{b} \right\}.
+% \]
+% Now, the number of elements in 
+
+
+
+
+% The number of elements in $G^{\prime\prime}$ is $A^{\prime\prime} - B^{\prime\prime} + 1$ and this has order $O(\tfrac{1}{a}(B^\prime-A^\prime)) = O(\tfrac{1}{b}F)$ because
+% \[
+% \frac{B^\prime-A^\prime}{a} = \frac{t_{\text{max}} - t_{\text{min}}}{a\Delta} = \frac{t_{\text{max}} - t_{\text{min}}}{bT_s} \leq \frac{F}{b}.
+% \]  
+% The number of operations required to compute $h_{\ell,k}$ is therefore $O(\tfrac{1}{b}F)$.  Now, computing $v_k = \sum_{\ell=0}^{b-1}h_{\ell,k}$ requires $O(F)$ operations.  To compute all of $Z_1, \dots, Z_K$ and $Y_1, \dots, Y_K$ we require $v_k$ for $k = 1 + c\min(P \cup D), \dots, K + c\max(P \cup D)$.  For the sake of comparison let us assume $\max(P \cup D) - \min(P \cup D) = O(L)$.  In this case, the number of operations to compute all required $v_k$ has order $O(FH+FL)$.
+
+% \subsection{Computing $h_{\ell,k}$ by fast Fourier transform}\label{sec:computing-h_ell-k-1}
+
+% If the transmit pulse does not have finite duration, or has very long duration, then the approach suggested in the previous section can be slow.  Instead it may be more efficient to compute $h_{\ell,k}$ using the fast Fourier transform.  From~\eqref{eq:hkseqdefn} we see that $h_{\ell,k}$ is the convolution of the sequence $\{z_{\ell,n}, n \in \ints\}$ with the sequence $\{g_{\ell,n},n \in \ints\}$.  Observe that $z_{\ell,n} = z_{bn+\ell}$ is only nonzero for those $n$ satisfying
+% \[
+% a \leq bn + \ell \leq aN
+% \]
+% so that
+% \[
+% h_{\ell,k} = \sum_{n = A^{\prime\prime}}^{B^{\prime\prime}}z_{\ell,n}g_{\ell,k-n}
+% \]
+% where $A^{\prime\prime} = \ceil{\frac{a - \ell}{b}}$ and $B^{\prime\prime} = \floor{\frac{aN - \ell}{b}}$.  This finite convolution can be computed using the fast Fourier transform.  We require the value of $h_{\ell,k}$ for
+% \[
+% k = 1 + c \min( P \cup D ) , \dots, K + c \max( P \cup D ),
+% \]
+% so the length of the transform required is 
+% \[
+% K + c( \max( P \cup D ) -  \min( P \cup D ) ) + B^{\prime\prime} - A^{\prime\prime}.
+% \]
+% If all symbols are in one contiguous block then $\max( P \cup D ) -  \min( P \cup D )  = L - 1$.  So the complexity of the fast Fourier transform has order $O\big(\loglin(cH + cL + \tfrac{a}{b}N) \big)$.  Computing all of the required $v_k$ then requires $O\big(b\loglin(cH + cL + \tfrac{a}{b}N) \big)$
+
+
+
+% \section{Summary of algorithm complexity}\label{sec:summ-algor-compl}
+
+% In the previous section we described a number of different algorithms for computing $\tilde{\tau}$.  In this section, we discuss some of the trade-offs between these algorithms.  The complexity of the algorithms in terms of $H$, $F$ and $L$ is collated in Table~\ref{tab_computation_time}.  Firstly, the naive algorithm requires $O(HLF)$ operations.  This is significantly slower than the faster algorithms that we have described.  One restriction of the faster algorithms is that they require $T_s$ to be rationally related to $T$, that is, $T_s = \tfrac{p}{q}T$ for $p$ and $q$ positive integers.  This does not appear to be a prohibitive assumption for practical systems.  For the sake of comparison we assume that $\max(P \cup D) - \min(P \cup D) = O(L)$ in what follows.  The faster algorithms require $v_k$ for $k = 1 + c\min(P \cup D), \dots, K + c\max(P \cup D)$.  Computing these $v_k$ requires $O(FH+FL)$ operations using the algorithm described in Section~\ref{sec:computing-h_ell-k}.  Given these $v_k$ the values of $Z_1,\dots,Z_K$ and $Y_1,\dots,Y_K$ can be computed directly in $O(H\abs{P})$ and $O(H\abs{D})$ operations respectively.  Together this requires $O(HL)$ operations.  This direct algorithm requires $O(FH+FL+HL)$ operations in total.  Rather than compute $Z_1,\dots,Z_K$ and $Y_1,\dots,Y_K$ directly, the fast Fourier transform can be used to compute these in $O((H+L)\log(H+L))$ operations.  This can be faster than the direct algorithm if $H$ and $L$ are large.
+
+% Finally, we consider the special case when the data symbols are in a small number of contiguous blocks, and when the number of pilots symbols is small (we treat $\abs{P}$ as a constant).  In this case the recursive algorithm from Section~\ref{sec:computing-ztau-grid} can be used to compute $Z_1,\dots,Z_K$ in $O(H+\abs{D}) = O(H+L)$ operations and the direct algorithm for computing $Y_1,\dots,Y_K$ requires $O(H\abs{P}) = O(H)$ operations.  In total the number of operations required is dominated by the complexity of computing all the required $v_k$, which is $O(FH+FL)$.  In many practical systems, the data symbols are arranged in contiguous blocks, and it is desirable that the number of pilot symbols is small, so as to maximise the amount of data transmitted.  For these reasons we expect this recursive algorithm to be of particular practical use.
+
+% %Comparing the algorithms this way is useful as it gives an indication of how the complexity changes with some of the key parameters, $L$ the number of symbols, $F$ being related to the length of the transmit pulse, and $K$ being related to the length of the interval $[\tau_{\text{min}}, \tau_{\text{max}}]$ within which the time offset $\tau_0$ is assumed to lie.  However, these analyses do not provide much information about the practical computational complexity of the algorithms when any of $K$, $F$ or $L$ is `small'.  To supplement this we \dots
+
+% \begin{table}[t]
+% \centering
+% \caption{Complexity order for different algorithms}
+% \begin{tabular}{ll}
+% Algorithm & Complexity  \\ \toprule
+% Naive & $HLF$    \\ 
+% Direct & $FH+FL + HL$ \\
+% FFT & $FH + FL + (H+L)\log(H+L)$   \\ 
+% Recursive with $\abs{P}$ constant & $FH+FL$ \\ \bottomrule
+% \end{tabular}
+% \label{tab_computation_time}
+% \end{table}
+
+
+
+
+% \begin{figure}[tp]
+% 	\centering
+% 		\includegraphics{code/benchplot-1.mps}
+% 		\caption{Benchmarks}
+% 		\label{fig:plot5}
+% \end{figure}
+
+
+
+\subsection{Obtaining $\hat{\tau}$ from $\tilde{\tau}$}\label{sec:numerical-refinement}
+
+In the previous section we described methods for computing $\tilde{\tau}$, the minimiser of $LS(\tau)$ over the grid $\tau_1, \dots, \tau_K$.  This serves as an approximation of $\hat{\tau}$, the global minimiser of $LS(\tau)$ over the interval $[\tau_{\text{min}}, \tau_{\text{max}}]$.  We now discuss methods for obtaining $\hat{\tau}$ from $\tilde{\tau}$.  Many approaches could be taken.  For example, the Newton-Raphson method, or gradient ascent could be employed with $\tilde{\tau}$ as a starting point.  In our implementation we have used Brent's method~\cite[Ch.~5]{Brent_opt_no_derivs_1973}\cite[Section 10.2]{numerical_recipes_in_Cpp_2002}.  Brent's method is used internally by the \texttt{fminbnd} function in the popular MATLAB environment.  It has the advantage of not requiring the derivatives of $LS(\tau)$.  Brent's method requires three initialisation points, $x$, $y$ and $z$, such that $\hat{\tau} \in [x,z]$ and $LS(y) < LS(z)$ and $LS(y) < LS(x)$.  We use $\tilde{\tau}$ and its adjacent grid points for initialisation, that is, $x = \tilde{\tau} - \Delta$, $y = \tilde{\tau}$ and $z = \tilde{\tau}+\Delta$.
+
+Brent's method is iterative.  During the method a number of calls to the function $LS(\tau)$ are made.  The number of calls depends on the grid spacing $\Delta$, but not on $L$.  Each call requires $O(L)$ operations, and so, the total number of operations required by Brent's method is $O(L)$.
+
+%The usual question of whether Brent's method will converge correctly to $\hat{\tau}$ is now valid.  Intuitively it $\tilde{\tau}$ is sufficiently close to $\hat{\tau}$ then we expect correct convergence.  However, there is the possibility that the method fails to converge to the true minimiser.  For this reason our algorithms cannot garauntee that $\hat{\tau}$ is correctly computed.  Nevertheless, we find that the 
+
+% For Brent's method to work correctly it is helpful that $LS(\tau)$ be continuous near $\hat{\tau}$.  To ensure this we can choose the transmit pulse to be continuous. For example, if a truncated root-raised cosine pulse is used, then it should be truncated at its zeros.  We have observed Brent's method to occasionally converge incorrectly if the transmit pulse is not continuous, for example when $g(t)$ is a rectangular pulse.  Observation of $LS(\tau)$ in these cases shows that failures can occur when discontinuities in $LS(\tau)$ exist between $\tilde{\tau}$ and $\hat{\tau}$.  Assuming that the transmit pulse is continuous does not seem prohibitive for practical systems.
+
+%Brent's method (as with any iterative optimisation method) can be computationally burdensome.  During operation a potentially large number of calls to the function $LS(\tau)$ can be made.  It would be interesting to see if specialised optimisation procedures can be designed for $LS(\tau)$.  A common approach in the engineering literature is parabolic interpolation.  However, Brent's method already employs parabolic interpolation, so we do not expect any gain to be made by this simple approach.   Specialised interpolators do exist for other estimation problems, such as frequency estimation~\cite{QuinnFreqEstInterpl1994}.  It may be that specialised interpolators exist for $LS(\tau)$.
+
+
+\section{Simulations}\label{sec:simulations}
+
+We present the results of Monte Carlo simulations with our new estimator (the minimiser of $LS(\tau)$), the estimator assuming all symbols are known (the minimiser of $LS_{\text{informationless}}$), the estimator that only uses the pilot symbols (the minimiser of $LS_{\text{pilotsonly}}$), and with estimators that result from combining a `nonlinearity and filter' symbol synchroniser~\cite{Oerder_synch_square_circstat_1988,Morelli_symbtime_feedforward_1997,Panayirci_eval_per_symbtim_1996} with the `high SNR' frame synchronisation algorithm of Massey~\cite{Massey1972optimumframe}\cite[Equation 3.29]{Robertson_frame_sync_phd_1995}.  We consider two popular nonlinearities, \emph{square}~\cite{Oerder_synch_square_circstat_1988} and \emph{absolute value}~\cite{Panayirci_eval_per_symbtim_1996}.  %We describe our implementation of these estimators in Appendix~\ref{sec:impl-oerd-meyr}.  
+
+For our simulations the noise $\{w_n\}$ is complex Gaussian with zero mean and independent real and imaginary parts having variance $\sigma^2$.  The signal to noise ratio (SNR) is defined as $\text{SNR} = \frac{E_s}{2\sigma^2}$ where $E_s = T_s/T$ is the average energy per sample.  The symbol period is $T=1$ and we put $p = 2$ and $q=11$ so the sample period is $T_s = \tfrac{2}{11}$.  The time offset search interval is $[\tau_{\text{min}}, \tau_{\text{max}}] = [50,150]$ and $c = 15$ so that $\Delta = \tfrac{T}{c} = \tfrac{1}{15}$.  This corresponds to the grid
+\[
+50, \; 50 + \tfrac{1}{15}, \; 50 + \tfrac{2}{15}, \; \dots, \; 150 - \tfrac{1}{15}, 150
+\]
+that is searched in order to provide the approximate estimate $\tilde{\tau}$.  Brent's method is used to refine $\tilde{\tau}$ to within $10^{-7}$ of $\hat{\tau}$.  Monte Carlo simulations are run for SNRs between \unit[-20]{dB} and \unit[20]{dB} in steps of \unit[2]{dB}. The number of replications used per experiment is $N=5000$ to obtain $N$ estimates $\hat{\tau}_1, \dots, \hat{\tau}_N$ and the sample mean square error (MSE) is computed according to $\tfrac{1}{N}\sum_{n=1}^N(\hat{\tau}_n - \tau_0)^2$.  For each replication the data symbols are uniformly randomly generated QPSK symbols, the complex amplitude $\alpha_0$ has magnitude one and phase uniformly randomly generated on $[0, 2\pi)$, and the time offset $\tau_0$ is uniformly randomly generated on the interval $[\tau_{\text{min}}, \tau_{\text{max}}]$.  We run simulations with the total number of symbols equal to $L=75$ and $L=2555$ and in each case the number of pilots symbols is $\abs{P} = L/5$.  In all cases the pilot symbols are arranged in a contiguous block with indices $P = \{1,\dots,\abs{P}\}$ and the data symbols are arranged in a contiguous block with indices $D = \{\abs{P}+1, \dots,\abs{D}\}$.  When $L=75$ the pilot sequence is generated by constructing an $m$-sequence of length $2^4-1 = 15$ with generator polynomial $1 + x + x^5$.  When $L=2555$ the pilot sequence is generated by an $m$-sequence of length $2^{9}-1 = 511$ with generator polynomial $1 + x^4 + x^{10}$.  In both cases, the pilot sequence is constructed by replacing the $0$'s in the $m$-sequence with $-1$'s.
+
+Figure~\ref{fig:plot1} displays the sample MSE of the estimators when the transmit pulse is a root-raised cosine (RRC) with roll-off $\tfrac{1}{3}$ and period $T = 1$.  The pulse is truncated at the $15$th zero on the positive and negative real axis.  These zeros occur at $t \approx \pm 11.635639$.  This truncated pulse is then normalised to have energy 1.  The sample MSE of all estimators is poor until the SNR is sufficiently large, a threshold effect is then observed, after which, the sample MSE decreases consistently as SNR increases.  When $L=75$ the estimators using the square and absolute value nonlinearities have similar performance.  The estimator using only the $15$ pilots has comparatively poor performance.  Our new estimator $\hat{\tau}$ is the most accurate.
+Our new estimator is also more accurate than the estimators using the square and absolute value nonlinearities when $L=2555$.  The estimator using only the $511$ pilot symbols is accurate in this case and, interestingly, this is the most accurate estimator at low SNR.  % This behaviour suggests modifying the objective function $LS(\tau)$ to give the pilots symbols more importance when the SNR is low.  For example, rather than minimise~\eqref{eq:LSt} we could instead minimise a weighted version of it,
+% \[
+% LS_\beta(\tau) = A - \tfrac{1}{L} \big( \beta Z(\tau) + \abs{Y(\tau)}\big)^2 
+% \]
+% where the weight $\beta$ would be small when SNR is small and near $1$ when SNR is large.  Computing the $\hat{\tau}$ that minimises $LS_\beta$ can be achieved with only a minor modification to the algorithm we describe in Section~\ref{sec:computing-estimator}.  A method for choosing $\beta$ is needed.  The choice will depend on $L$, the number of pilots $\abs{P}$ and the SNR.  We will not investigate this further here.
+
+Figure~\ref{fig:plot2} displays the sample MSE where the transmit pulse is a root-raised cosine with roll-off $\tfrac{1}{30}$ and period $T = 1$.  The pulse is truncated at the $30$th zero on the positive and negative real axis.  These zeros occur at $t \approx \pm 29.59077$.   This truncated pulse is then normalised to have energy 1.  In this setting, the sample MSE of the estimator using the square nonlinearity is larger than when the roll-off was $\tfrac{1}{3}$.  This behaviour has been studied previously~\cite{Oerder_synch_square_circstat_1988}.  The performance of the estimator using the absolute value nonlinearity is less affected by the small roll-off, as has been observed previously~\cite{Panayirci_eval_per_symbtim_1996,Morelli_symbtime_feedforward_1997}.  Our new estimator $\hat{\tau}$ appears to be minimally affected by small roll-off.  %Again, when $N=2555$ the estimator using only the $2047$ pilots is the most accurate at low SNR.  Our new estimator is the most accurate at moderate to high SNR.
+
+Figures~\ref{fig:plot1} and~\ref{fig:plot2} display the modified CRB~\cite{DAndrea_mod_crb_timing_1994}\cite[Eq.~(6)]{Steendam_low_snr_crb_timing_2001}.  This bound assumes that only data symbols exist and that the transmit pulse is bandlimited.  Figure~\ref{fig:plot2} shows that the bound is close to the estimator that assumes all of the symbols are known when the transmit pulse is the bandwidth efficient RRC with roll-off $\tfrac{1}{30}$.  The bound appears looser in Figure~\ref{fig:plot1} where the transmit pulse is an RRC with roll-off $\tfrac{1}{3}$.
+
+
+% Figure~\ref{fig:benchplot} shows the computation time in microseconds per symbol for the estimators as $L$ varies from $50$ to $4000$.  The number of pilot symbols is set to $\abs{P} = \floor{L/5}$, that is, approximately 20\% of the symbols are pilots, and the SNR is fixed at \unit[10]{dB}.  Otherwise the simulations parameters are the same as in Figure~\ref{fig:plot1}.  Figure~\ref{fig:benchplot} indicates that computational complexity grows approximately linearly with $L$ and suggests that for large $L$ our estimator takes approximately 10 times longer than an estimator using nonlinearity and filter symbol synchronization followed by Massey's frame synchronizer.  We also plot the amount of time required by our estimator when Brent's optimisation procedure is omitted.  This indicates what might be gained by replacing Brent's method with a special purpose optimiser.  In this case, our estimator without Brent's method takes approximately 6 times longer than nonlinearity and filter symbol synchronization followed by Massey's frame synchronizer.  For all benchmarks the computer used is an Intel Q6600 processor running at \unit[2.4]{GHz}.  The software is written in C++.  Both nonlinearity and filter symbol synchronizers and Massey's frame synchronizer are considered highly computationally efficient and well suited to practical implementation on small devices and dedicated hardware.  Our new estimator is more computationally complex than these approaches, but not dramatically so.  In some practical cases it may be that the added computational complexity is justified by the improved statistical accuracy indicated in Figures~\ref{fig:plot1} and~\ref{fig:plot2}.
+
+
+%%% roll-off 1/3 
+\begin{figure*}[p]
+	\centering
+		\includegraphics{code/data/plot-1.mps}
+		\caption{MSE versus SNR with $L=75$ and $2555$.  The number of pilots is $\abs{P} = L/5$.  The transmit pulse is a root raised cosine with roll-off~$\tfrac{1}{3}$.}
+		\label{fig:plot1}
+\end{figure*}
+
+%%% roll-off 1/30
+\begin{figure*}[p]
+	\centering
+		\includegraphics{code/data/plot-2.mps}
+		\caption{MSE versus SNR with $L=75$ and $2555$.  The number of pilots is $\abs{P} = L/5$.  The transmit pulse is a root raised cosine with roll-off~$\tfrac{1}{30}$.}
+		\label{fig:plot2}
+\end{figure*}
+
+%bencmarks
+% \begin{figure}[t]
+% 	\centering
+% 		\includegraphics{code/data/benchplot-1.mps}
+% 		\caption{Computation time per symbol in microseconds as $L$ varies}
+% 		\label{fig:benchplot}
+% \end{figure}
+
+
+
+\section{Conclusion}
+
+We have developed an estimator of the time offset of a transmitted communications signal that contains both pilot symbols known to the receiver and data symbols unknown to the receiver.  We focused on signalling constellations that have symbols lying on the complex unit circle such as $M$-ary phase shift keying.  We also described a fast algorithm for computing the estimator that requires $O(L\log L)$ operations in the worst case, where $L$ is the number of transmitted symbols.
+
+A key feature of our estimator is that the pilots symbols are now used for both symbol timing and frame synchronisation simultaneously.  This is not the case for popular estimators where the symbol timing estimator cannot make use of the pilot symbols.  Monte Carlo simulations indicated that our new estimator is statistically more accurate than popular estimators from the literature that combine nonlinearity and filter symbol synchronisers~\cite{Oerder_synch_square_circstat_1988,Panayirci_eval_per_symbtim_1996} with the frame synchronisation algorithm of Massey~\cite{Massey1972optimumframe}. 
+
+
+\appendix
+
+\subsection{Obtaining $LS(\tau)$}\label{app:obtaining-sstau}
+
+In this section, we analytically minimise~\eqref{eq:LSatd} with respect to $\alpha$ and $\{d_i, i \in D\}$ to obtain the simplified objective function $LS(\tau)$ from~\eqref{eq:LSt}.  Using inner product notation,
+\begin{align}
+LS(\alpha,&\tau,\{\angle d_i, i \in D\})   \nonumber  \\
+&= \dotprod{r(t) - \alpha x(t - \tau)}{r(t) - \alpha x(t - \tau)}  \nonumber  \\
+&= \|r(t)\|^2 - \alpha^*\dotprod{r(t)}{x(t - \tau)}  \nonumber \\
+ &\hspace{1.5cm}- \alpha\dotprod{x(t - \tau)}{r(t)} + \alpha\alpha^*\|x(t - \tau)\|^2, \nonumber %\label{eq:LSinnerprod}
+ %&= \|r(t)\|^2 - 2\re\left(\dotprod{\alpha x(t - \tau)}{r(t)}\right) + \abs{\alpha}^2\|x(t - \tau)\|^2. \nonumber
+\end{align}
+% and recall the following properties of the inner product.
+% \begin{property} 
+% Let $u(t)$ and $v(t)$ be functions mapping $\reals$ to $\complex$.  In what follows we will drop $(t)$ and just write $u$ and $v$.
+% \begin{enumerate}
+% \item $\dotprod{u}{v} = \dotprod{v}{u}^*$, that is, the inner product is conjugate commutative.
+% \item \label{prop:scalarmult} If $c \in \complex$ then,
+% \[
+% \dotprod{cu}{v} = c\dotprod{u}{v},  
+% \]
+% \[
+% \dotprod{u}{cv} = c^*\dotprod{u}{v}.
+% \]
+% \item  \label{prop:sumlin} If $a(t)$ is a function mapping $\reals$ to $\complex$ then,
+% \[
+% \dotprod{u + a}{v} = \dotprod{u}{v} + \dotprod{a}{v},
+% \]
+% \[
+% \dotprod{u}{v + a} = \dotprod{u}{v} + \dotprod{u}{a}.
+% \]
+% \end{enumerate}
+% \end{property}
+% We will use the notation $\|u(t)\|^2 = \dotprod{u(t)}{u(t)}$.  Using these properties $LS$ can be written in the form
+% \begin{align*}
+% LS(&\alpha,\tau,\{d_i, i \in D\})  \\
+% &= \|r(t)\|^2 - \alpha^*\dotprod{r(t)}{x(t - \tau)}  \\
+% &\hspace{1.5cm}- \alpha\dotprod{x(t - \tau)}{r(t)} + \alpha\alpha^*\|x(t - \tau)\|^2,
+% %&= \|r(t)\|^2 - 2\re\left(\dotprod{\alpha x(t - \tau)}{r(t)}\right) + \abs{\alpha}^2\|x(t - \tau)\|^2. \nonumber
+% \end{align*}
+where we use the notation $\|r(t)\|^2 = \dotprod{r(t)}{r(t)}$.  Now,
+\begin{align*}
+\|x&(t - \tau)\|^2 = \dotprod{x(t - \tau)}{x(t - \tau)} \\
+&= \dotprod{\sum_{i\in\ints}g(t - iT - \tau)s_i}{\sum_{k\in\ints}g(t - kT - \tau)s_k} \\
+&= \sum_{i\in\ints}\sum_{k\in\ints} s_is_k^* \dotprod{g(t - iT - \tau)}{g(t - kT - \tau)} \\
+&=  \sum_{i \in \ints} \abs{s_i}^2 \\
+&=  L,
+\end{align*}
+since $\abs{s_i} = 1$ when $i \in P \cup D$ and zero otherwise, and $L = \abs{P} + \abs{D}$ is the total number of transmitted symbols.  The second last line in the equation above follows from the orthogonality of $g(t)$ and its time shifts~\eqref{eq:contorthpulse}.  Recall the function $Y(\tau)$ from~\eqref{eq:defnY} and put
+\begin{align*}
+W(\tau,\{d_i, i \in D\}) &= \dotprod{r(t)}{x_d(t - \tau)} \\
+&= \sum_{i \in D} d_i^*\dotprod{r(t)}{g(t - iT - \tau)},
+\end{align*}
+so that,
+\begin{align*}
+\dotprod{x(t - \tau)}{r(t)} &= \dotprod{x_p(t - \tau) + x_d(t - \tau)}{r(t)} \\
+&= Y^* + W^*,
+\end{align*}
+where, to simplify notation, we will drop the arguments and write $Y$ and $W$ for the functions $Y(\tau)$ and $W(\tau,\{d_i, i \in D\})$.  Now
+\begin{align}
+LS&(\alpha,\tau,\{d_i, i \in D\}) \nonumber \\
+&= \|r(t)\|^2 - \alpha (Y^*+W^*) - \alpha^*(Y+W) + L \abs{\alpha}^2  \nonumber \\
+&= A - 2\re(\alpha Y^*) - 2\re(\alpha W^*) + L \abs{\alpha}^2, \label{eq:LSallsimple}
+\end{align}
+where $A = \|r(t)\|^2$ is a constant.  Note that only $W$ depends on the data symbols $\{d_i, i \in D\}$ in the equation above.
+
+Fix amplitude $\alpha$ and time offset $\tau$ and~\eqref{eq:LSallsimple} is minimised by choosing $\{ d_i , i \in D\}$ to maximise 
+\[
+\re(\alpha W^*) = \sum_{i \in D} \re(\alpha d_i\dotprod{g(t - iT - \tau)}{r(t)}).
+\]
+This is achieved by choosing each $d_i \in C$ equal to
+\begin{equation}\label{eq:hatd}
+d_i(\alpha, \tau) = \frac{\alpha^* \dotprod{r(t)}{g(t - iT - \tau)}}{\abs{\alpha} \abs{\dotprod{r(t)}{g(t - iT - \tau)}}},
+\end{equation}
+which is the minimiser of $LS(\alpha,\tau,\{d_i, i \in D\})$ with respect to the data symbols as a function of $\alpha$ and $\tau$.  Substituting this into $W$ gives,
+\begin{align}
+W(\tau, \{d_i(\tau,\alpha), i \in D\})  &= \frac{\alpha}{\abs{\alpha}}\sum_{i \in D} \abs{\dotprod{r(t)}{g(t - iT - \tau)}} \nonumber \\
+&= \frac{\alpha}{\abs{\alpha}}Z(\tau), \label{eq:Zdefn}
+\end{align}
+where the function $Z(\tau)$ is defined in~\eqref{eq:defnZ}.  As with $Y$ and $W$ we drop the argument and write $Z$ for $Z(\tau)$.  Substituting $d_i(\alpha, \tau)$ from~\eqref{eq:hatd} into~\eqref{eq:LSallsimple} and using~\eqref{eq:Zdefn} gives the objective function $LS(\alpha,\tau,\{d_i, i \in D\})$ minimised with respect to the data symbols, 
+\begin{align}
+LS(\alpha, \tau) &= \min_{d_i \in C} LS(\alpha,\tau,\{d_i, i \in D\}) \nonumber \\
+&= LS(\alpha, \tau, \{d_i(\tau,\alpha), i \in D\}) \nonumber  \\
+&=A  + L \abs{\alpha}^2 - 2\re(\alpha Y^*) - 2\abs{\alpha}Z. \label{eq:LSalphatau}
+\end{align}
+%Here we abuse notation slightly by reusing $LS$.  This should not cause confusion since $LS(\alpha,\tau,\{d_i, i \in D\})$ and $LS(\alpha, \tau)$ are easily told apart by there arguments.
+
+Now fix $\tau$ and the data symbols $\{d_i, i \in D\}$ and~\eqref{eq:LSallsimple} is minimised by choosing $\alpha$ equal to
+\begin{align*}
+\alpha(\tau, \{d_i, i \in D\}) = \frac{1}{L}( Y + W ),
+\end{align*}
+which is the minimiser of $LS(\alpha,\tau,\{d_i, i \in D\})$ with respect to $\alpha$ as a function of $\tau$ and $\{d_i, i \in D\}$.  Let $\alpha(\tau)$ be the minimiser of $LS(\alpha, \tau)$ with respect to $\alpha$ as a function of $\tau$.  Then $\alpha(\tau)$ must satisfy 
+\begin{align*}
+\alpha(\tau) &= \alpha(\tau,\{d_i(\tau,\alpha(\tau)), i \in D\}) \\
+&= \frac{1}{L}\big( Y + W(\tau,\{d_i(\tau,\alpha(\tau)), i \in D\}) \big) \\
+&= \frac{1}{L}\left( Y + \frac{\alpha(\tau)}{\abs{\alpha(\tau)}}Z \right), 
+\end{align*} 
+where~\eqref{eq:Zdefn} is used on the last line.  Let $\alpha(\tau) = \rho e^{j\theta}$ where $\rho$ is a positive real and $j = \sqrt{-1}$ so that,
+\[ 
+L\rho = e^{-j\theta} Y + Z.
+\]
+Both $\rho$ and $Z$ are real, so $e^{-j\theta} Y$ is real and either $e^{-j\theta} Y = \abs{Y}$ or $e^{-j\theta} Y = -\abs{Y}$.  So, there are two possible solutions for $\rho$,
+\[
+\rho = \frac{ Z + \abs{Y}}{L} \qquad \text{and} \qquad \rho = \frac{Z - \abs{Y}}{L},
+\]
+and two corresponding solutions for $e^{j\theta}$,
+\[
+e^{j\theta} = \frac{Y}{\abs{Y}} \qquad \text{and} \qquad e^{j\theta} = -\frac{Y}{\abs{Y}}.
+\]
+So, there are two possible solutions for $\alpha(\tau)$ that we denote by $\alpha_{+}(\tau)$ and $\alpha_{-}(\tau)$,
+\begin{equation}\label{eq:eqsovled}
+\alpha_+(\tau) = \frac{Y}{L}\left( 1 + \frac{Z}{\abs{Y}} \right), \;\;\;\; \alpha_-(\tau) = \frac{Y}{L}\left( 1 - \frac{Z}{\abs{Y}} \right).
+\end{equation}
+
+
+Substituting the two equations from~\eqref{eq:eqsovled} into~\eqref{eq:LSalphatau} gives two possible objective functions, %that we denote by $LS_+$ and $LS_-$,
+\[
+LS_+(\tau) =  LS(\alpha_+(\tau), \tau) = A - \tfrac{1}{L} (Z + \abs{Y})^2
+\]
+% \begin{align*}
+% LS_+(\tau) &=  LS(\alpha_+(\tau), \tau)\\
+% &= \tfrac{1}{L}(Z + \abs{Y})^2 \\
+% &\hspace{1cm} - \tfrac{2}{L}( \abs{Y}^2 + Z\abs{Y} + (Z + \abs{Y})Z) + A \\
+% &=A - \tfrac{1}{L} (Z + \abs{Y})^2
+% \end{align*}
+and
+\[
+LS_-(\tau) =  LS(\alpha_{-}(\tau), \tau) = A - \tfrac{1}{L} (Z - \abs{Y})^2.
+\]
+% \begin{align*}
+% LS_-(\tau) &=  LS(\alpha_{-}(\tau), \tau) \\
+% &= \tfrac{1}{L}(Z - \abs{Y})^2 \\
+% &\hspace{1cm} - \tfrac{2}{L}(\abs{Y}^2 - Z\abs{Y} + (Z - \abs{Y})Z) + A \\
+% &= A - \tfrac{1}{L} (Z - \abs{Y})^2.
+% \end{align*}
+By definition $LS(\tau)$ is $LS(\alpha,\tau)$ minimised with respect to $\alpha$, that is,
+\begin{align*}
+LS(\tau) &= \min_{\alpha \in \complex} LS(\alpha,\tau) \\
+ &= \min_{\alpha \in \complex} \min_{di \in C} LS(\alpha,\tau,\{d_i, i \in D\}).
+\end{align*}
+So $LS(\tau)$ is the smaller of $LS_+(\tau)$ and $LS_-(\tau)$.  Since both $Z$ and $\abs{Y}$ are nonnegative,
+\[
+(Z - \abs{Y})^2 \leq (Z + \abs{Y})^2,
+\]
+and $LS_+(\tau) \leq LS_-(\tau)$.  Therefore,
+\[
+LS(\tau) = LS_+(\tau) =  A - \tfrac{1}{L} (Z + \abs{Y})^2.
+\]
+
+
+% \subsection{Implementing a nonlinearity and filter symbol synchronizer and Massey's frame synchronizer}\label{sec:impl-oerd-meyr}
+
+% %As described in the introduction, we have developed our time-offset estimator for the \emph{packet data} setting where a finite number of symbols are transmitted.  The \emph{continuous data} setting is used in the original paper of Oerder and Meyr~\cite{Oerder_synch_square_circstat_1988}, but their estimator is easy to convert for use in the packet data setting, as we describe here.
+
+% We first describe an implementation of a nonlinearity and filter symbol synchronizer.  The received signal is first (digital) matched filtered and sampled at rate $T/4$ to obtain
+% \begin{equation}\label{eq:x_kOerderMeyrfiltered}
+% x_k = \dotprod{r_n}{g(n T_s - k T/4)} = \sum_{n \in G_k} r_n g(n T_s - k T/4),
+% \end{equation}
+% where 
+% \[
+% G_k = \left\{ n \in \ints \mid \ceil{\frac{t_{\text{min}} + kT/4}{T_s}} \leq n \leq \floor{\frac{t_{\text{max}} + kT/4}{T_s}} \right\}.
+% \]
+% We only require those $x_k$ that can contain energy from the transmitted signal, that is, those $x_k$ for which $A \leq k \leq B$, where
+% \[
+% A = \ceil{4\frac{t_{\text{min}}+ \tau_{\text{min}}}{T} + 4\min(P \cup D)},
+% \]
+% \[
+% B = \floor{4\frac{t_{\text{max}}+ \tau_{\text{max}}}{T} + 4\max(P \cup D)}.
+% \]
+% A function $f : \complex \mapsto \reals$ is chosen and the symbol timing estimator is taken to be $\hat{\gamma} = -\tfrac{T}{2\pi} \angle X$ where $\angle X$ is the complex argument of
+% \[
+% X = \sum_{k = A}^B f(x_k) e^{-j\pi k/2}.
+% \]
+% Common choices for $f$ include magnitude squared $\|\cdot\|^2$ and magnitude $\|\cdot\|$, but other choices have also been studied~\cite{Oerder_synch_square_circstat_1988,Panayirci_eval_per_symbtim_1996,Morelli_symbtime_feedforward_1997}.
+
+% Given $\hat{\gamma}$ we now require frame synchronization.  We use Massey's estimator for the high SNR setting~\cite{Massey1972optimumframe}\cite[Equation 3.29]{Robertson_frame_sync_phd_1995}.  The estimator is
+% \begin{equation}\label{eq:masihat}
+% \hat{i} = \arg\min_{i \in \{i_{\text{min}}, \dots, i_{\text{max}}\}} L(i),
+% \end{equation}
+% where
+% \[
+% i_{\text{min}} = \ceil{\frac{\tau_{\text{min}} - \hat{\gamma}}{T}}, \qquad i_{\text{max}} = \floor{\frac{\tau_{\text{max}} - \hat{\gamma}}{T}},
+% \]
+% \[
+% L(i) = \abs{ \sum_{k \in P} p_k^* \rho_{k+i} } + \sum_{k \in D} \abs{\rho_{k+i}},
+% \]
+% and
+% \[
+% \rho_k = \dotprod{r_n}{g(n T_s - kT - \hat{\gamma})}.
+% \]
+% The estimator of time offset is then $\hat{\gamma} + \hat{i}T$.  Observe that $\rho_k$ can be computed efficiently by taking account of the fact that $g(t)$ has finite duration, similarly to~\eqref{eq:x_kOerderMeyrfiltered}.   For further efficiency $\rho_k$ for each $k = i_{\text{min}} + \min(P \cup D), \dots, i_{\text{max}} + \max(P \cup D)$ can be computed and stored to avoid recomputation when evaluating $L(i)$ in~\eqref{eq:masihat}.  Also, if the data symbols are in a small number of contiguous blocks, the term $\sum_{k \in D} \abs{\rho_{k+i}}$ from $L(i)$ can be computed recursively in a manner similar to Section~\ref{sec:computing-ztau-grid}.
+
+% % We have
+% % \[
+% % d_0 = L(i_{\text{min}}) = \sum_{k \in D} \abs{\rho_{k+i_{\text{min}}}},
+% % \]
+% % and
+% % \[
+% % d_{1} = \sum_{k \in D} \abs{\rho_{k+i_{\text{min}}+1}} = d_{0} + \abs{\rho_{\max(D)+i_{\text{min}}+1}} - \abs{\rho_{\min(D)+i_{\text{min}}}},
+% % \]
+% % and in general
+% % \[
+% % d_{k+1} = d_{k} + \abs{\rho_{\max(D)+i_{\text{min}}+k+1}} - \abs{\rho_{\min(D)+i_{\text{min}}+k}}
+% % \]
+
+{
+\small
+\bibliography{bib}
+}
+ 
+
+\end{document}

@@ -1,0 +1,7 @@
+Latex and software for the paper
+
+Robby McKilliam, Andre Pollok and William Cowley. "Simultaneous symbol timing and frame synchronization for phase shift keying" accepted to IEEE Transactions on Communications, Jan. 2014.
+
+The bash script build.sh will compile the figures and latex file async.tex with the data used in the paper.  Software for running simulations is contained in the code directory.  The simulations are executed with the bash script runC.sh.  This assumes a recent C++11 compiler is installed.
+
+Software tests can be run by navigating to the code/C directory and issuing the command "make build test"

@@ -1,0 +1,13 @@
+This is MetaPost, version 1.803 (kpathsea version 6.1.1)  18 FEB 2015 16:11
+**benchplot.mp
+(mpost.mp (/usr/share/texlive/texmf-dist/metapost/base/plain.mp
+Preloading the plain mem file, version 1.004) ) (./benchplot.mp
+(/usr/share/texlive/texmf-dist/metapost/base/graph.mp
+(/usr/share/texlive/texmf-dist/metapost/base/marith.mp
+(/usr/share/texlive/texmf-dist/metapost/base/string.mp))
+(/usr/share/texlive/texmf-dist/metapost/base/format.mp
+(/usr/share/texlive/texmf-dist/metapost/base/string.mp)
+(/usr/share/texlive/texmf-dist/metapost/base/texnum.mp)))
+(/usr/share/texlive/texmf-dist/metapost/base/sarith.mp) [1{psfonts.map}] )
+1 output file written: benchplot-1.mps
+
