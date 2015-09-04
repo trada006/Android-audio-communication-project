@@ -72,7 +72,24 @@ class NormalisedFinitePulse : public FinitePulse {
 public:
 
     NormalisedFinitePulse(const P& p_) : p(p_), tmin_(p_.tmin()), tmax_(p_.tmax()), T_(p_.T()) {
+        
         auto f = [this](double t) -> double{return std::norm(this->p.pulse(t));};
+        
+        
+        SingleVariateFunction f=SingleVariateFunction()
+        {
+            double value(double x)
+            {
+                return p.pulse(x);
+            
+            }
+        
+        }
+        
+        
+        
+        
+        
         double energy = trapezoidal(f, tmin_, tmax_, 100000); //last number is integration steps
         normalisingconstant = sqrt(energy);
     };
